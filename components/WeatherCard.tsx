@@ -1,4 +1,4 @@
-// components/WeatherCard.tsx
+// components WeatherCard.tsx
 import { View, Text } from "react-native";
 import { WeatherCardProps } from "../types/cuaca";
 export default function WeatherCard({
