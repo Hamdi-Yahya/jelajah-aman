@@ -1,10 +1,11 @@
 // app/(tabs)/tentang.tsx
-import { Text, View } from "react-native";
+import { Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { typeScale, spacing } from "../../constants/styles";
 
 export default function Tentang() {
   return (
-    <View style={{ padding: spacing.sedang }}>
+    <SafeAreaView style={{ flex: 1, padding: spacing.sedang }}>
       <Text
         accessibilityLabel="Nama aplikasi Jelajah Aman"
         style={{
@@ -22,6 +23,6 @@ export default function Tentang() {
       <Text style={{ fontSize: typeScale.keterangan }}>
         Pembuat: Muhammad Hamdi Yahya
       </Text>
-    </View>
+    </SafeAreaView>
   );
 }
