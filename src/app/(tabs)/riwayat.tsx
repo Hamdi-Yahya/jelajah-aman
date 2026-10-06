@@ -1,6 +1,6 @@
 // src/app/(tabs)/riwayat.tsx
 import { useState, useCallback } from "react";
-import { View, Text, Button, Alert } from "react-native";
+import { View, Text, Button, Alert, Platform } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ambilSemuaFavorit, hapusFavorit } from "../../services/favoritStorage";
@@ -15,19 +15,34 @@ export default function TabRiwayat() {
     }, []),
   );
 
+  // Menangani konfirmasi dan penghapusan kota favorit (kompatibel Mobile & Web)
   function hapus(id: number, nama: string) {
-    Alert.alert(`Yakin hapus ${nama}?`, "", [
-      {
-        text: "Batal",
-      },
-      {
-        text: "Hapus",
-        onPress: async () => {
-          await hapusFavorit(id);
-          setDaftarFavorit((prev) => prev.filter((k) => k.id !== id));
+    const prosesHapus = async () => {
+      await hapusFavorit(id);
+      setDaftarFavorit((prev) => prev.filter((k) => k.id !== id));
+    };
+
+    if (Platform.OS === "web") {
+      // Fallback untuk platform web karena react-native-web tidak mendukung Alert.alert()
+      const konfirmasi = window.confirm(`Yakin hapus ${nama}?`);
+
+      if (konfirmasi) {
+        prosesHapus();
+      }
+    } else {
+      // Sesuai ketentuan tugas: Alert.alert() untuk platform Android & iOS
+      Alert.alert(`Yakin hapus ${nama}?`, "", [
+        {
+          text: "Batal",
+          style: "cancel",
         },
-      },
-    ]);
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: prosesHapus,
+        },
+      ]);
+    }
   }
 
   return (
