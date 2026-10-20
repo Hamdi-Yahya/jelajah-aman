@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Button,
   TouchableOpacity,
+  Alert,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -16,6 +18,9 @@ import AtribusiCuaca from "../../components/AtribusiCuaca";
 import StatusData from "../../components/StatusData";
 import { useDebounce } from "../../hooks/use-debounce";
 import { cariKota } from "../../services/geocodingService";
+import { useLocalSearchParams } from "expo-router";
+import { simpanRiwayatPencarian } from "../../services/riwayatPencarianStorage";
+import { useAppTheme } from "../../context/ThemeContext";
 import {
   ambilCuacaOfflineFirst,
   BATAS_CACHE_MS,
@@ -23,6 +28,7 @@ import {
 import {
   bersihkanCacheLama,
   daftarKotaTersimpan,
+  hapusCacheKota,
 } from "../../services/cacheRepository";
 import {
   mintaIzinLokasi,
@@ -36,6 +42,7 @@ import {
   RingkasanKotaTersimpan,
 } from "../../../types/cache";
 export default function HalamanUtama() {
+  const { colors } = useAppTheme();
   const [teksCari, setTeksCari] = useState("");
   const [hasilPencarian, setHasilPencarian] = useState<HasilGeocoding[]>([]);
   const [kotaTerpilih, setKotaTerpilih] = useState<HasilGeocoding | null>(null);
@@ -50,6 +57,30 @@ export default function HalamanUtama() {
   const requestIdRef = useRef(0); // pencegah race condition
   async function muatKotaTersimpan() {
     setKotaTersimpan(await daftarKotaTersimpan());
+  }
+
+  // Konfirmasi (Alert) dan penghapusan data cache kota offline
+  function konfirmasiHapusCache(kunci: string, nama: string) {
+    const prosesHapus = async () => {
+      await hapusCacheKota(kunci);
+      await muatKotaTersimpan();
+    };
+
+    if (Platform.OS === "web") {
+      const konfirmasi = window.confirm(
+        `Apakah Anda yakin ingin menghapus data cache offline untuk kota ${nama}?`,
+      );
+      if (konfirmasi) prosesHapus();
+    } else {
+      Alert.alert(
+        "Hapus Cache Kota",
+        `Apakah Anda yakin ingin menghapus data cache offline untuk kota ${nama}?`,
+        [
+          { text: "Batal", style: "cancel" },
+          { text: "Hapus", style: "destructive", onPress: prosesHapus },
+        ],
+      );
+    }
   }
   // Saat aplikasi dibuka: buang cache > 7 hari, lalu tampilkan daftar tersimpan
   useEffect(() => {
@@ -66,8 +97,30 @@ export default function HalamanUtama() {
       .then(setHasilPencarian)
       .catch(() => setHasilPencarian([]));
   }, [teksTertunda]);
+  const params = useLocalSearchParams<{
+    pilihKotaId?: string;
+    nama?: string;
+    lat?: string;
+    lon?: string;
+    country?: string;
+  }>();
+
+  // Otomatis memilih dan memuat kota saat diarahkan dari klik riwayat
+  useEffect(() => {
+    if (params.pilihKotaId && params.lat && params.lon && params.nama) {
+      pilihKota({
+        id: Number(params.pilihKotaId),
+        name: params.nama,
+        latitude: Number(params.lat),
+        longitude: Number(params.lon),
+        country: params.country ?? "",
+      });
+    }
+  }, [params.pilihKotaId]);
+
   async function pilihKota(kota: HasilGeocoding, paksaPerbarui = false) {
     setKotaTerpilih(kota);
+    simpanRiwayatPencarian(kota); // Simpan ke riwayat pencarian terakhir
     const idSaatIni = ++requestIdRef.current;
     setSedangMemuat(true);
     setPesanError(null);
@@ -119,7 +172,7 @@ export default function HalamanUtama() {
     });
   }
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 16 }}
         keyboardShouldPersistTaps="handled"
@@ -130,33 +183,81 @@ export default function HalamanUtama() {
           onPress={gunakanLokasiSaatIni}
         />
         {pesanLokasi && (
-          <Text accessibilityLabel={pesanLokasi}>{pesanLokasi}</Text>
+          <Text style={{ color: colors.textSecondary }} accessibilityLabel={pesanLokasi}>
+            {pesanLokasi}
+          </Text>
         )}
         {hasilPencarian.map((kota) => (
-          <TouchableOpacity key={kota.id} onPress={() => pilihKota(kota)}>
-            <Text>{kota.name}</Text>
+          <TouchableOpacity
+            key={kota.id}
+            onPress={() => pilihKota(kota)}
+            style={{
+              paddingVertical: 10,
+              paddingHorizontal: 12,
+              backgroundColor: colors.card,
+              borderRadius: 8,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Text style={{ fontWeight: "600", color: colors.text }}>{kota.name}</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+              {kota.country} {kota.admin1 ? `• ${kota.admin1}` : ""}
+            </Text>
           </TouchableOpacity>
         ))}
         {kotaTersimpan.length > 0 && (
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontWeight: "bold" }}>
+          <View style={{ gap: 8 }}>
+            <Text style={{ fontWeight: "bold", fontSize: 16, color: colors.text }}>
               Tersimpan di perangkat (bisa dibuka offline)
             </Text>
             {kotaTersimpan.map((k) => (
-              <TouchableOpacity
+              <View
                 key={k.kunci}
-                onPress={() =>
-                  pilihKota({
-                    id: k.id,
-                    name: k.nama,
-                    latitude: k.latitude,
-                    longitude: k.longitude,
-                    country: "",
-                  })
-                }
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  paddingVertical: 8,
+                  paddingHorizontal: 12,
+                  backgroundColor: colors.card,
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
               >
-                <Text>{k.nama}</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() =>
+                    pilihKota({
+                      id: k.id,
+                      name: k.nama,
+                      latitude: k.latitude,
+                      longitude: k.longitude,
+                      country: "",
+                    })
+                  }
+                >
+                  <Text style={{ fontWeight: "600", fontSize: 15, color: colors.text }}>
+                    {k.nama}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                    Disimpan:{" "}
+                    {new Date(k.disimpanPada).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </Text>
+                </TouchableOpacity>
+
+                <Button
+                  title="Hapus Cache"
+                  color="#FF3B30"
+                  onPress={() => konfirmasiHapusCache(k.kunci, k.nama)}
+                />
+              </View>
             ))}
           </View>
         )}
@@ -181,7 +282,7 @@ export default function HalamanUtama() {
               suhu={hasil.cuaca.saatIni.suhu}
               tingkatAQI={konversiTingkatAQI(hasil.kualitasUdara.indeksAQI)}
             />
-            <Text style={{ fontSize: 12, color: "#888888" }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary }}>
               Kondisi: {labelKodeCuaca(hasil.cuaca.saatIni.kodeCuaca)}{" "}
               {"\u2022"} Angin {hasil.cuaca.saatIni.kecepatanAngin} km/j
             </Text>
